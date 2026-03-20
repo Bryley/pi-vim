@@ -2,7 +2,7 @@
 
 ## Overview
 
-A pi extension that replaces the default input editor with a vim-modal editor supporting Normal, Insert, Visual, and Command-line modes with comprehensive vim motions, operators, and text objects.
+A pi extension that replaces the default input editor with a vim-modal editor supporting Normal, Insert, and Visual modes with comprehensive vim motions, operators, and text objects.
 
 ## Architecture
 
@@ -30,9 +30,8 @@ pi-vim/
 │   ├── vim-editor.ts         # VimEditor extends CustomEditor
 │   ├── modes/
 │   │   ├── normal.ts         # Normal mode handler
-│   │   ├── insert.ts         # Insert mode handler  
-│   │   ├── visual.ts         # Visual mode handler (visual, visual-line)
-│   │   └── command-line.ts   # : command handler (e.g. :w, :q, :s)
+│   │   ├── insert.ts         # Insert mode handler
+│   │   └── visual.ts         # Visual mode handler (visual, visual-line)
 │   ├── motions.ts            # Motion definitions (w, b, e, f, t, gg, G, etc.)
 │   ├── operators.ts          # Operator definitions (d, c, y, >, <)
 │   ├── text-objects.ts       # Text objects (iw, aw, i", a", i(, a(, etc.)
@@ -62,7 +61,7 @@ pi-vim/
 
 ```typescript
 interface VimState {
-  mode: "normal" | "insert" | "visual" | "visual-line" | "command-line" | "operator-pending";
+  mode: "normal" | "insert" | "visual" | "visual-line" | "operator-pending";
   count: number;           // Numeric prefix (0 = none)
   pendingOperator: string | null;  // 'd', 'c', 'y', '>', '<', etc.
   register: string;        // Current register ('"' = default)
@@ -169,7 +168,7 @@ Operators are "pending" — they wait for a motion or text object:
 ```typescript
 // User types: d2w
 // 1. 'd' sets pendingOperator = 'd'
-// 2. '2' sets count = 2  
+// 2. '2' sets count = 2
 // 3. 'w' resolves motion → compute range → delete range
 ```
 
@@ -247,7 +246,7 @@ Record each "change" (insert session, delete, replace, etc.) as a replayable seq
 - Track: operator + motion/textobj + inserted text
 - `.` replays last change with optional new count
 
-### Phase 6: Search & Command-Line Mode
+### Phase 6: Search
 
 #### 6.1 — Inline Search
 
@@ -255,16 +254,6 @@ Record each "change" (insert session, delete, replace, etc.) as a replayable seq
 - `?` — backward search
 - `n` / `N` — next/previous match
 - `*` / `#` — search for word under cursor
-
-#### 6.2 — Command-Line Mode (`modes/command-line.ts`)
-
-- `:` enters command-line mode
-- Render a `:` prompt line at bottom of editor
-- Support minimal commands:
-  - `:w` → submit (trigger `onSubmit`)
-  - `:q` → clear editor or pass ctrl+d
-  - `:{number}` → go to line
-  - `:s/old/new/g` → substitute (stretch goal)
 
 ### Phase 7: Additional Features
 
@@ -279,7 +268,6 @@ Record each "change" (insert session, delete, replace, etc.) as a replayable seq
 - `u` — undo (delegate to base editor's ctrl+- or undo mechanism)
 - `Ctrl+r` — redo (if available)
 - `>>` / `<<` — indent/dedent current line
-- `ZZ` — submit, `ZQ` — quit
 
 #### 7.2 — Marks (Stretch)
 
@@ -299,7 +287,7 @@ Record each "change" (insert session, delete, replace, etc.) as a replayable seq
 The biggest challenge. The base `Editor` has private `state: { lines, cursorLine, cursorCol }`. We can only read via `getText()` + `getCursor()` and write via `setText()` + escape sequences.
 
 **Mitigation:** Maintain a shadow buffer in VimEditor. On every `handleInput`:
-1. Sync shadow state from `getText()` / `getCursor()`  
+1. Sync shadow state from `getText()` / `getCursor()`
 2. Compute vim operation on shadow state
 3. Apply result back via `setText()` + cursor positioning
 
@@ -329,15 +317,15 @@ Helper function:
 private repositionCursor(targetLine: number, targetCol: number): void {
   const lines = this.getText().split('\n');
   const lastLine = lines.length - 1;
-  
+
   // From end-of-last-line, go to start of last line
   super.handleInput('\x01'); // Home
-  
+
   // Go up to target line
   for (let i = lastLine; i > targetLine; i--) {
     super.handleInput('\x1b[A'); // Up
   }
-  
+
   // Go right to target column
   for (let i = 0; i < targetCol; i++) {
     super.handleInput('\x1b[C'); // Right
@@ -363,7 +351,7 @@ c) **Pragmatic approach** — Use a simplified visual indicator: show the anchor
 
 `CustomEditor` intercepts certain keys before passing to us:
 - `app.interrupt` (Escape) when autocomplete is not showing → calls `onEscape`
-- `app.exit` (Ctrl+D) when editor empty → calls `onCtrlD`  
+- `app.exit` (Ctrl+D) when editor empty → calls `onCtrlD`
 - `app.clipboard.pasteImage` (Ctrl+V)
 - Extension shortcuts
 - All registered `actionHandlers` (model cycling, tool expand, etc.)
@@ -386,7 +374,7 @@ The base Editor has autocomplete support (slash commands, @ file references). In
 | 3 | Operators (d/c/y) + text objects (iw/aw, quotes, brackets) | 2 days |
 | 4 | Visual mode (v/V) with selection + operators | 1-2 days |
 | 5 | Registers, proper yank/paste, dot-repeat | 1 day |
-| 6 | Search (/,?,n,N,*,#) + command-line (:) | 1-2 days |
+| 6 | Search (/,?,n,N,*,#) | 1-2 days |
 | 7 | Polish: remaining commands, marks, macros | 1-2 days |
 
 **Total estimate:** ~8-12 days for a comprehensive vim implementation.
@@ -397,7 +385,7 @@ The base Editor has autocomplete support (slash commands, @ file references). In
 # Global
 cp -r pi-vim ~/.pi/agent/extensions/pi-vim
 
-# Or project-local  
+# Or project-local
 cp -r pi-vim .pi/extensions/pi-vim
 
 # Or test directly
