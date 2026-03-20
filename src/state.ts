@@ -29,6 +29,8 @@ export interface VimState {
   pendingCharMotion: string | null;
   /** Whether we're waiting for the second key after 'g' (e.g., gg) */
   pendingG: boolean;
+  /** Pending text object prefix: 'i' or 'a' (waiting for object key like w, ", (, etc.) */
+  pendingTextObjectPrefix: string | null;
 }
 
 export function createInitialState(): VimState {
@@ -42,6 +44,7 @@ export function createInitialState(): VimState {
     countStarted: false,
     pendingCharMotion: null,
     pendingG: false,
+    pendingTextObjectPrefix: null,
   };
 }
 
@@ -51,6 +54,7 @@ export function resetOperatorState(state: VimState): void {
   state.pendingOperator = null;
   state.pendingCharMotion = null;
   state.pendingG = false;
+  state.pendingTextObjectPrefix = null;
 }
 
 export function modeDisplayName(mode: VimMode): string {
