@@ -91,6 +91,8 @@ export class VimEditor extends CustomEditor {
   }
 
   private handleCommandLine(data: string): void {
+    const state = getSearchState();
+    const returnMode = state.returnMode;
     const result = handleSearchInput(data);
 
     if (result === "confirm") {
@@ -99,9 +101,9 @@ export class VimEditor extends CustomEditor {
       const cursor = this.getCursor();
       const motionResult = executeSearchMotion(lines, cursor);
       this.moveCursorTo(motionResult.position.line, motionResult.position.col);
-      this.vimState.mode = "normal";
+      this.vimState.mode = returnMode;
     } else if (result === "cancel") {
-      this.vimState.mode = "normal";
+      this.vimState.mode = returnMode;
     }
     // "continue" → stay in command-line mode, render will show the prompt
   }
@@ -148,10 +150,12 @@ export class VimEditor extends CustomEditor {
     if (lines.length === 0) return lines;
 
     // Apply visual selection highlighting if in visual mode
-    if (
-      (this.vimState.mode === "visual" || this.vimState.mode === "visual-line") &&
-      this.vimState.visualAnchor
-    ) {
+    // Also keep highlighting when in command-line mode initiated from visual
+    const isVisual = this.vimState.mode === "visual" || this.vimState.mode === "visual-line";
+    const isSearchFromVisual =
+      this.vimState.mode === "command-line" &&
+      (getSearchState().returnMode === "visual" || getSearchState().returnMode === "visual-line");
+    if ((isVisual || isSearchFromVisual) && this.vimState.visualAnchor) {
       this.applyVisualHighlight(lines, width);
     }
 

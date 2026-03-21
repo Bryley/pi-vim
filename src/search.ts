@@ -23,6 +23,8 @@ export interface SearchState {
   active: boolean;
   /** The prompt character (/ or ?) */
   prompt: string;
+  /** Mode to return to after search completes (normal or visual/visual-line) */
+  returnMode: "normal" | "visual" | "visual-line";
 }
 
 /** Global search state */
@@ -32,6 +34,7 @@ const searchState: SearchState = {
   inputBuffer: "",
   active: false,
   prompt: "/",
+  returnMode: "normal",
 };
 
 export function getSearchState(): SearchState {
@@ -41,11 +44,15 @@ export function getSearchState(): SearchState {
 /**
  * Begin a search command-line session.
  */
-export function beginSearch(direction: "forward" | "backward"): void {
+export function beginSearch(
+  direction: "forward" | "backward",
+  returnMode: "normal" | "visual" | "visual-line" = "normal",
+): void {
   searchState.active = true;
   searchState.inputBuffer = "";
   searchState.prompt = direction === "forward" ? "/" : "?";
   searchState.lastDirection = direction;
+  searchState.returnMode = returnMode;
 }
 
 /**

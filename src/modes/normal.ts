@@ -613,13 +613,13 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     // === Search command-line entry ===
     case "/":
-      beginSearch("forward");
+      beginSearch("forward", "normal");
       state.mode = "command-line";
       resetOperatorState(state);
       return true;
 
     case "?":
-      beginSearch("backward");
+      beginSearch("backward", "normal");
       state.mode = "command-line";
       resetOperatorState(state);
       return true;

@@ -40,6 +40,12 @@ import {
 import { resolveTextObject } from "../text-objects.js";
 import { isValidRegister, getRegister, deleteToRegister } from "../registers.js";
 import type { Position } from "../motions.js";
+import {
+  beginSearch,
+  searchNext,
+  searchPrev,
+  searchWordUnderCursor,
+} from "../search.js";
 
 export interface VisualModeContext {
   state: VimState;
@@ -573,6 +579,48 @@ export function handleVisualMode(
 
     case "%":
       executeVisualMotion(matchingBracket, ctx, 1);
+      resetOperatorState(state);
+      return true;
+
+    // === Search motions ===
+    case "n":
+      executeVisualMotion(searchNext, ctx, count);
+      resetOperatorState(state);
+      return true;
+
+    case "N":
+      executeVisualMotion(searchPrev, ctx, count);
+      resetOperatorState(state);
+      return true;
+
+    case "*": {
+      const sLines = ctx.getText().split("\n");
+      const sCursor = ctx.getCursor();
+      const sResult = searchWordUnderCursor(sLines, sCursor, "forward");
+      ctx.moveCursorTo(sResult.position.line, sResult.position.col);
+      resetOperatorState(state);
+      return true;
+    }
+
+    case "#": {
+      const sLines = ctx.getText().split("\n");
+      const sCursor = ctx.getCursor();
+      const sResult = searchWordUnderCursor(sLines, sCursor, "backward");
+      ctx.moveCursorTo(sResult.position.line, sResult.position.col);
+      resetOperatorState(state);
+      return true;
+    }
+
+    // === Search command-line entry ===
+    case "/":
+      beginSearch("forward", state.mode as "visual" | "visual-line");
+      state.mode = "command-line";
+      resetOperatorState(state);
+      return true;
+
+    case "?":
+      beginSearch("backward", state.mode as "visual" | "visual-line");
+      state.mode = "command-line";
       resetOperatorState(state);
       return true;
 
