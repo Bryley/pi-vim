@@ -15,6 +15,12 @@ import { handleNormalMode, type NormalModeContext } from "./modes/normal.js";
 import { handleInsertMode, type InsertModeContext } from "./modes/insert.js";
 import { handleVisualMode, getVisualRange, type VisualModeContext } from "./modes/visual.js";
 import { ESCAPE_SEQS } from "./keys.js";
+import {
+  handleSearchInput,
+  getSearchPrompt,
+  getSearchState,
+  executeSearchMotion,
+} from "./search.js";
 
 export class VimEditor extends CustomEditor {
   public vimState: VimState;
@@ -44,6 +50,10 @@ export class VimEditor extends CustomEditor {
       case "visual":
       case "visual-line":
         this.handleVisual(data);
+        break;
+
+      case "command-line":
+        this.handleCommandLine(data);
         break;
 
       default:
@@ -78,6 +88,22 @@ export class VimEditor extends CustomEditor {
       moveCursorTo: (line, col) => this.moveCursorTo(line, col),
     };
     handleNormalMode(data, ctx);
+  }
+
+  private handleCommandLine(data: string): void {
+    const result = handleSearchInput(data);
+
+    if (result === "confirm") {
+      // Execute the search and move cursor to the match
+      const lines = this.getText().split("\n");
+      const cursor = this.getCursor();
+      const motionResult = executeSearchMotion(lines, cursor);
+      this.moveCursorTo(motionResult.position.line, motionResult.position.col);
+      this.vimState.mode = "normal";
+    } else if (result === "cancel") {
+      this.vimState.mode = "normal";
+    }
+    // "continue" → stay in command-line mode, render will show the prompt
   }
 
   private handleVisual(data: string): void {
@@ -130,12 +156,25 @@ export class VimEditor extends CustomEditor {
     }
 
     // Add mode indicator to the bottom border (right side)
-    const modeName = modeDisplayName(this.vimState.mode);
-    const label = ` ${modeName} `;
     const last = lines.length - 1;
-    if (visibleWidth(lines[last]!) >= label.length) {
-      lines[last] =
-        truncateToWidth(lines[last]!, width - label.length, "") + label;
+
+    if (this.vimState.mode === "command-line" && getSearchState().active) {
+      // Show search prompt on the bottom border
+      const prompt = getSearchPrompt();
+      const cursorChar = "█";
+      const promptWithCursor = ` ${prompt}${cursorChar} `;
+      if (visibleWidth(lines[last]!) >= promptWithCursor.length) {
+        lines[last] =
+          truncateToWidth(lines[last]!, width - promptWithCursor.length, "") +
+          promptWithCursor;
+      }
+    } else {
+      const modeName = modeDisplayName(this.vimState.mode);
+      const label = ` ${modeName} `;
+      if (visibleWidth(lines[last]!) >= label.length) {
+        lines[last] =
+          truncateToWidth(lines[last]!, width - label.length, "") + label;
+      }
     }
 
     return lines;

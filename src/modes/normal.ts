@@ -46,6 +46,12 @@ import {
   getLastChange,
   isCurrentlyRecording,
 } from "../repeat.js";
+import {
+  beginSearch,
+  searchNext,
+  searchPrev,
+  searchWordUnderCursor,
+} from "../search.js";
 
 export interface NormalModeContext {
   state: VimState;
@@ -562,6 +568,60 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
       if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(matchingBracket, ctx, 1);
       if (!state.pendingOperator) resetOperatorState(state);
+      return true;
+
+    // === Search motions ===
+    case "n":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
+      executeMotion(searchNext, ctx, count);
+      if (!state.pendingOperator) resetOperatorState(state);
+      return true;
+
+    case "N":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
+      executeMotion(searchPrev, ctx, count);
+      if (!state.pendingOperator) resetOperatorState(state);
+      return true;
+
+    case "*": {
+      const lines = ctx.getText().split("\n");
+      const cursor = ctx.getCursor();
+      const result = searchWordUnderCursor(lines, cursor, "forward");
+      if (state.pendingOperator) {
+        if (isCurrentlyRecording()) recordKey(data);
+        applyOperatorWithMotion(ctx, lines, cursor, result);
+      } else {
+        ctx.moveCursorTo(result.position.line, result.position.col);
+      }
+      resetOperatorState(state);
+      return true;
+    }
+
+    case "#": {
+      const lines = ctx.getText().split("\n");
+      const cursor = ctx.getCursor();
+      const result = searchWordUnderCursor(lines, cursor, "backward");
+      if (state.pendingOperator) {
+        if (isCurrentlyRecording()) recordKey(data);
+        applyOperatorWithMotion(ctx, lines, cursor, result);
+      } else {
+        ctx.moveCursorTo(result.position.line, result.position.col);
+      }
+      resetOperatorState(state);
+      return true;
+    }
+
+    // === Search command-line entry ===
+    case "/":
+      beginSearch("forward");
+      state.mode = "command-line";
+      resetOperatorState(state);
+      return true;
+
+    case "?":
+      beginSearch("backward");
+      state.mode = "command-line";
+      resetOperatorState(state);
       return true;
 
     // === Insert mode entry ===
