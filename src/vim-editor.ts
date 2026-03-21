@@ -25,6 +25,8 @@ import {
 
 export class VimEditor extends CustomEditor {
   public vimState: VimState;
+  private redoStack: Array<{ lines: string[]; cursorLine: number; cursorCol: number }> = [];
+
 
   constructor(
     tui: TUI,
@@ -36,8 +38,47 @@ export class VimEditor extends CustomEditor {
     this.vimState = createInitialState();
   }
 
+  /**
+   * Undo: snapshot current state to redo stack, then perform base editor undo.
+   * Works at the same level as the base editor's internal state.
+   */
+  vimUndo(): void {
+    const editor = this as any;
+    if (!editor.undoStack || editor.undoStack.length === 0) return;
+
+    // Save current internal state to redo stack before undoing
+    const state = editor.state;
+    this.redoStack.push(structuredClone(state));
+
+    // Perform base editor undo
+    editor.undo();
+  }
+
+  /**
+   * Redo: restore state from redo stack, push current state to undo stack.
+   * Mirrors the base editor's undo mechanism in reverse.
+   */
+  vimRedo(): void {
+    if (this.redoStack.length === 0) return;
+    const editor = this as any;
+    const snapshot = this.redoStack.pop()!;
+
+    // Push current state to undo stack
+    editor.undoStack.push(structuredClone(editor.state));
+
+    // Restore the redo snapshot directly into internal state
+    Object.assign(editor.state, snapshot);
+    editor.lastAction = null;
+    editor.preferredVisualCol = null;
+    if (editor.onChange) {
+      editor.onChange(this.getText());
+    }
+  }
+
   handleInput(data: string): void {
     const { vimState } = this;
+    const textBefore = this.getText();
+    const redoStackBefore = this.redoStack.length;
 
     switch (vimState.mode) {
       case "insert":
@@ -67,7 +108,11 @@ export class VimEditor extends CustomEditor {
         break;
     }
 
-
+    // Clear redo stack when text changes from a non-undo/redo action.
+    // If the redo stack changed size, it was an undo/redo operation — don't clear.
+    if (this.redoStack.length === redoStackBefore && this.getText() !== textBefore) {
+      this.redoStack.length = 0;
+    }
   }
 
   private handleInsert(data: string): void {
@@ -105,6 +150,8 @@ export class VimEditor extends CustomEditor {
       getCursor: () => this.getCursor(),
       setText: (text) => this.setText(text),
       moveCursorTo: (line, col) => this.moveCursorTo(line, col),
+      undo: () => this.vimUndo(),
+      redo: () => this.vimRedo(),
     };
     handleNormalMode(data, ctx);
   }

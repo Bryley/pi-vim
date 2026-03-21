@@ -61,6 +61,8 @@ export interface NormalModeContext {
   getCursor: () => { line: number; col: number };
   setText: (text: string) => void;
   moveCursorTo: (line: number, col: number) => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 /**
@@ -747,13 +749,14 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     // === Undo / Redo ===
     case "u":
-      // Undo: send ctrl+- (the default undo keybinding) to the base editor
-      ctx.superHandleInput("\x1f");
+      // Undo
+      ctx.undo();
       resetOperatorState(state);
       return true;
 
     case "\x12":
-      // Ctrl+r (redo) - base editor doesn't support redo, consume silently
+      // Ctrl+r (redo)
+      ctx.redo();
       resetOperatorState(state);
       return true;
 
