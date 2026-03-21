@@ -31,6 +31,10 @@ export interface VimState {
   pendingG: boolean;
   /** Pending text object prefix: 'i' or 'a' (waiting for object key like w, ", (, etc.) */
   pendingTextObjectPrefix: string | null;
+  /** Whether we're waiting for a register name after `"` */
+  pendingRegister: boolean;
+  /** Whether we're replaying a dot-repeat (suppress recording) */
+  isReplaying: boolean;
 }
 
 export function createInitialState(): VimState {
@@ -45,6 +49,8 @@ export function createInitialState(): VimState {
     pendingCharMotion: null,
     pendingG: false,
     pendingTextObjectPrefix: null,
+    pendingRegister: false,
+    isReplaying: false,
   };
 }
 
@@ -55,6 +61,8 @@ export function resetOperatorState(state: VimState): void {
   state.pendingCharMotion = null;
   state.pendingG = false;
   state.pendingTextObjectPrefix = null;
+  state.pendingRegister = false;
+  state.register = '"';
 }
 
 export function modeDisplayName(mode: VimMode): string {

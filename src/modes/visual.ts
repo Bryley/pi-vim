@@ -33,9 +33,12 @@ import {
 } from "../motions.js";
 import {
   applyOperator,
+  deleteRange,
+  extractText,
   type OperatorRange,
 } from "../operators.js";
 import { resolveTextObject } from "../text-objects.js";
+import { isValidRegister, getRegister, deleteToRegister } from "../registers.js";
 import type { Position } from "../motions.js";
 
 export interface VisualModeContext {
@@ -139,6 +142,17 @@ export function handleVisualMode(
     state.visualAnchor = null;
     state.mode = "normal";
     resetOperatorState(state);
+    return true;
+  }
+
+  // --- Pending register selection (after `"`) ---
+  if (state.pendingRegister) {
+    state.pendingRegister = false;
+    if (data.length === 1 && isValidRegister(data)) {
+      state.register = data;
+    } else {
+      state.register = '"';
+    }
     return true;
   }
 
@@ -265,6 +279,73 @@ export function handleVisualMode(
   if (data === "Y") {
     // In visual mode, Y yanks the selection
     applyVisualOperator(ctx, "y");
+    return true;
+  }
+
+  // --- Paste in visual mode (replaces selection with register contents) ---
+  if (data === "p" || data === "P") {
+    const reg = getRegister(state.register);
+    if (reg) {
+      const lines = ctx.getText().split("\n");
+      const cursor = ctx.getCursor();
+      const range = getVisualRange(state, cursor, lines);
+
+      // Delete selection
+      const deletedText = extractText(lines, range);
+      const deleteResult = deleteRange(lines, range);
+
+      // Insert the register content at the delete position
+      const newLines = deleteResult.newLines;
+      const pos = deleteResult.cursor;
+
+      if (reg.linewise) {
+        const pasteLines = reg.text.split("\n");
+        if (range.linewise) {
+          newLines.splice(pos.line, 0, ...pasteLines);
+        } else {
+          newLines.splice(pos.line + 1, 0, ...pasteLines);
+        }
+        ctx.setText(newLines.join("\n"));
+        const targetLine = range.linewise ? pos.line : pos.line + 1;
+        const match = (pasteLines[0] || "").match(/^\s*/);
+        ctx.moveCursorTo(targetLine, match ? match[0].length : 0);
+      } else {
+        const line = newLines[pos.line] || "";
+        const pasteLines = reg.text.split("\n");
+
+        if (pasteLines.length === 1) {
+          newLines[pos.line] = line.substring(0, pos.col) + reg.text + line.substring(pos.col);
+          ctx.setText(newLines.join("\n"));
+          ctx.moveCursorTo(pos.line, pos.col + reg.text.length - 1);
+        } else {
+          const before = line.substring(0, pos.col);
+          const after = line.substring(pos.col);
+          const merged = [
+            before + pasteLines[0],
+            ...pasteLines.slice(1, -1),
+            pasteLines[pasteLines.length - 1] + after,
+          ];
+          newLines.splice(pos.line, 1, ...merged);
+          ctx.setText(newLines.join("\n"));
+          const lastIdx = pos.line + pasteLines.length - 1;
+          const lastCol = (pasteLines[pasteLines.length - 1] || "").length - 1;
+          ctx.moveCursorTo(lastIdx, Math.max(0, lastCol));
+        }
+      }
+
+      // Store deleted text in unnamed register (vim behavior: deleted text goes to "")
+      deleteToRegister('"', deletedText, range.linewise);
+    }
+
+    state.visualAnchor = null;
+    state.mode = "normal";
+    resetOperatorState(state);
+    return true;
+  }
+
+  // --- Register selection prefix ---
+  if (data === '"') {
+    state.pendingRegister = true;
     return true;
   }
 

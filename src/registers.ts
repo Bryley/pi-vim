@@ -6,7 +6,9 @@
  * - `0` - last yank only
  * - `1-9` - delete history (shifted on each delete)
  * - `a-z` - named registers
+ * - `A-Z` - append to named register (on write, reads as lowercase)
  * - `_` - black hole register (discards)
+ * - `+` / `*` - system clipboard (aliased to each other)
  */
 
 export interface RegisterContent {
@@ -15,6 +17,18 @@ export interface RegisterContent {
 }
 
 const registers: Map<string, RegisterContent> = new Map();
+
+/**
+ * Check if a register name is valid.
+ */
+export function isValidRegister(name: string): boolean {
+  if (name === '"' || name === "_") return true;
+  if (name >= "0" && name <= "9") return true;
+  if (name >= "a" && name <= "z") return true;
+  if (name >= "A" && name <= "Z") return true;
+  if (name === "+" || name === "*") return true;
+  return false;
+}
 
 /**
  * Get the content of a register.
@@ -33,6 +47,36 @@ export function yankToRegister(
   linewise: boolean,
 ): void {
   if (name === "_") return; // black hole
+
+  // Handle uppercase registers (append to lowercase)
+  if (name >= "A" && name <= "Z") {
+    const lower = name.toLowerCase();
+    const existing = registers.get(lower);
+    if (existing) {
+      const separator = existing.linewise || linewise ? "\n" : "";
+      const content: RegisterContent = {
+        text: existing.text + separator + text,
+        linewise: existing.linewise || linewise,
+      };
+      registers.set(lower, content);
+      registers.set('"', content);
+    } else {
+      const content: RegisterContent = { text, linewise };
+      registers.set(lower, content);
+      registers.set('"', content);
+    }
+    return;
+  }
+
+  // Handle clipboard registers
+  if (name === "+" || name === "*") {
+    const content: RegisterContent = { text, linewise };
+    registers.set("+", content);
+    registers.set("*", content);
+    registers.set('"', content);
+    registers.set("0", content);
+    return;
+  }
 
   const content: RegisterContent = { text, linewise };
 
@@ -57,6 +101,35 @@ export function deleteToRegister(
   linewise: boolean,
 ): void {
   if (name === "_") return; // black hole
+
+  // Handle uppercase registers (append to lowercase)
+  if (name >= "A" && name <= "Z") {
+    const lower = name.toLowerCase();
+    const existing = registers.get(lower);
+    if (existing) {
+      const separator = existing.linewise || linewise ? "\n" : "";
+      const content: RegisterContent = {
+        text: existing.text + separator + text,
+        linewise: existing.linewise || linewise,
+      };
+      registers.set(lower, content);
+      registers.set('"', content);
+    } else {
+      const content: RegisterContent = { text, linewise };
+      registers.set(lower, content);
+      registers.set('"', content);
+    }
+    return;
+  }
+
+  // Handle clipboard registers
+  if (name === "+" || name === "*") {
+    const content: RegisterContent = { text, linewise };
+    registers.set("+", content);
+    registers.set("*", content);
+    registers.set('"', content);
+    return;
+  }
 
   const content: RegisterContent = { text, linewise };
 

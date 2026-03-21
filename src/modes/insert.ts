@@ -1,10 +1,18 @@
 /**
  * Insert mode handler.
  * Passes all keys through to the base editor except Escape/Ctrl+[.
+ * Tracks inserted text for dot-repeat.
  */
 
 import type { VimState } from "../state.js";
 import { matchesKey } from "@mariozechner/pi-tui";
+import {
+  isCurrentlyRecording,
+  isRecordingInsertMode,
+  recordInsertText,
+  recordInsertBackspace,
+  finalizeRecording,
+} from "../repeat.js";
 
 export interface InsertModeContext {
   state: VimState;
@@ -28,6 +36,10 @@ export function handleInsertMode(
     if (ctx.getCursor().col > 0) {
       ctx.superHandleInput("\x1b[D");
     }
+    // Finalize dot-repeat recording when leaving insert mode
+    if (isCurrentlyRecording()) {
+      finalizeRecording();
+    }
     return true;
   }
 
@@ -35,7 +47,24 @@ export function handleInsertMode(
   // We handle this ourselves to prevent the default ctrl+c behavior
   if (data === "\x03") {
     ctx.state.mode = "normal";
+    if (isCurrentlyRecording()) {
+      finalizeRecording();
+    }
     return true;
+  }
+
+  // Track inserted text for dot-repeat
+  if (isCurrentlyRecording() && isRecordingInsertMode()) {
+    if (data === "\x7f") {
+      // Backspace
+      recordInsertBackspace();
+    } else if (data.length === 1 && data.charCodeAt(0) >= 32) {
+      // Printable character
+      recordInsertText(data);
+    } else if (data === "\n" || data === "\r") {
+      // Newline
+      recordInsertText("\n");
+    }
   }
 
   // Everything else passes through to base editor

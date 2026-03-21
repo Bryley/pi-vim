@@ -37,7 +37,15 @@ import {
   type OperatorRange,
 } from "../operators.js";
 import { resolveTextObject } from "../text-objects.js";
-import { getRegister } from "../registers.js";
+import { getRegister, isValidRegister } from "../registers.js";
+import {
+  startRecording,
+  recordKey,
+  markInsertEntry,
+  finalizeRecording,
+  getLastChange,
+  isCurrentlyRecording,
+} from "../repeat.js";
 
 export interface NormalModeContext {
   state: VimState;
@@ -99,6 +107,13 @@ function applyOperatorToRange(
 
   if (result.enterInsert) {
     ctx.state.mode = "insert";
+    // Mark insert entry for dot-repeat (e.g., `cw` enters insert)
+    if (isCurrentlyRecording()) {
+      markInsertEntry();
+    }
+  } else {
+    // Operator completed without entering insert — finalize recording
+    finalizeChangeRecording(ctx.state);
   }
 
   resetOperatorState(ctx.state);
@@ -131,6 +146,11 @@ function applyLinewiseOperator(
 
   if (result.enterInsert) {
     ctx.state.mode = "insert";
+    if (isCurrentlyRecording()) {
+      markInsertEntry();
+    }
+  } else {
+    finalizeChangeRecording(ctx.state);
   }
 
   resetOperatorState(ctx.state);
@@ -142,6 +162,24 @@ function applyLinewiseOperator(
  */
 export function handleNormalMode(data: string, ctx: NormalModeContext): boolean {
   const { state } = ctx;
+
+  // --- Pending register selection (after `"`) ---
+  if (state.pendingRegister) {
+    state.pendingRegister = false;
+    if (data.length === 1 && isValidRegister(data)) {
+      state.register = data;
+      // Record for dot-repeat
+      if (isCurrentlyRecording()) {
+        recordKey('"');
+        recordKey(data);
+      }
+    } else {
+      // Invalid register, cancel
+      resetOperatorState(state);
+      state.register = '"';
+    }
+    return true;
+  }
 
   // --- Pending text object key (after 'i' or 'a' in operator-pending mode) ---
   if (state.pendingTextObjectPrefix) {
@@ -156,6 +194,11 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
       if (range) {
         if (state.pendingOperator) {
+          // Record the text object key for dot-repeat
+          if (isCurrentlyRecording()) {
+            recordKey(prefix);
+            recordKey(data);
+          }
           applyOperatorToRange(ctx, lines, textObjectToRange(range));
         } else {
           // Text objects without operator don't do anything in normal mode
@@ -196,7 +239,9 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
         case "r":
           // Replace character under cursor (only without pending operator)
           if (!state.pendingOperator) {
+            beginChangeRecording(state, `r${data}`, count);
             replaceChar(data, ctx, count);
+            finalizeChangeRecording(state);
           }
           resetOperatorState(state);
           return true;
@@ -205,6 +250,11 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
           return true;
       }
 
+      // Record char motion key for dot-repeat
+      if (isCurrentlyRecording()) {
+        recordKey(pending);
+        recordKey(data);
+      }
       executeMotion(motionFn, ctx, count);
       if (!state.pendingOperator) {
         resetOperatorState(state);
@@ -225,6 +275,10 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
       // `gg` - go to first line (or line N)
       const count = state.count || 1;
       const countExplicit = state.countStarted;
+      if (isCurrentlyRecording()) {
+        recordKey("g");
+        recordKey("g");
+      }
       executeMotion(goToFirstLine, ctx, countExplicit ? count : 1);
       if (!state.pendingOperator) {
         resetOperatorState(state);
@@ -247,10 +301,27 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
   const count = state.count || 1;
   const countExplicit = state.countStarted;
 
+  // --- Register selection prefix (`"`) ---
+  if (data === '"') {
+    state.pendingRegister = true;
+    return true;
+  }
+
+  // --- Dot-repeat (`.`) ---
+  if (data === ".") {
+    replayLastChange(ctx, countExplicit ? count : 0);
+    resetOperatorState(state);
+    return true;
+  }
+
   // --- Operators ---
   if (data === "d" || data === "c" || data === "y" || data === ">" || data === "<") {
     if (state.pendingOperator === data) {
       // Doubled operator (dd, cc, yy, >>, <<) → linewise on current line(s)
+      // Recording was already started when the first operator key was pressed
+      if (isCurrentlyRecording()) {
+        recordKey(data);
+      }
       applyLinewiseOperator(ctx, data, count);
       return true;
     }
@@ -259,7 +330,16 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
       resetOperatorState(state);
       return true;
     }
-    // Set pending operator
+    // Set pending operator — recording starts but we wait for the motion key
+    // Don't record yank (y) — it's not a change
+    if (data !== "y" && !state.isReplaying && !isCurrentlyRecording()) {
+      startRecording();
+      // Record count digits if any
+      if (countExplicit) {
+        recordKey(String(count));
+      }
+      recordKey(data);
+    }
     state.pendingOperator = data;
     // Don't reset count - it carries over to the motion
     return true;
@@ -268,30 +348,36 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
   // --- Shortcut operators (D, C, Y) ---
   if (data === "D") {
     // D = d$ (delete to end of line)
+    beginChangeRecording(state, "D", count);
     state.pendingOperator = "d";
     executeMotion(lineEnd, ctx, 1);
+    finalizeChangeRecording(state);
     return true;
   }
 
   if (data === "C") {
     // C = c$ (change to end of line)
+    beginChangeRecording(state, "C", count);
     state.pendingOperator = "c";
     executeMotion(lineEnd, ctx, 1);
+    // Don't finalize — enters insert mode, finalized on Escape
     return true;
   }
 
   if (data === "Y") {
-    // Y = yy (yank whole line)
+    // Y = yy (yank whole line) — yank is not a "change" (no dot-repeat)
     applyLinewiseOperator(ctx, "y", count);
     return true;
   }
 
   // --- Paste commands ---
   if (data === "p" || data === "P") {
+    beginChangeRecording(state, data, count);
     const reg = getRegister(state.register);
     if (reg) {
       paste(ctx, reg.text, reg.linewise, data === "P");
     }
+    finalizeChangeRecording(state);
     resetOperatorState(state);
     return true;
   }
@@ -306,6 +392,7 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
     // === Basic directional motions ===
     case "h":
       if (state.pendingOperator) {
+        if (isCurrentlyRecording()) recordKey(data);
         executeMotionForOperator("h", ctx, count);
       } else {
         for (let i = 0; i < count; i++) ctx.superHandleInput(ESCAPE_SEQS.left);
@@ -315,6 +402,7 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     case "j":
       if (state.pendingOperator) {
+        if (isCurrentlyRecording()) recordKey(data);
         // j with operator is linewise
         const lines = ctx.getText().split("\n");
         const cursor = ctx.getCursor();
@@ -334,6 +422,7 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     case "k":
       if (state.pendingOperator) {
+        if (isCurrentlyRecording()) recordKey(data);
         // k with operator is linewise
         const lines = ctx.getText().split("\n");
         const cursor = ctx.getCursor();
@@ -353,6 +442,7 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     case "l":
       if (state.pendingOperator) {
+        if (isCurrentlyRecording()) recordKey(data);
         executeMotionForOperator("l", ctx, count);
       } else {
         for (let i = 0; i < count; i++) ctx.superHandleInput(ESCAPE_SEQS.right);
@@ -362,47 +452,56 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     // === Line motions ===
     case "0":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(lineStart, ctx, 1);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case "$":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(lineEnd, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case "^":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(firstNonBlank, ctx, 1);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     // === Word motions ===
     case "w":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(wordForward, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case "b":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(wordBackward, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case "e":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(wordEnd, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case "W":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(WORDForward, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case "B":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(WORDBackward, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case "E":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(WORDEnd, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
@@ -417,11 +516,13 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     // === Repeat char search ===
     case ";":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(repeatCharSearch, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case ",":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(reverseCharSearch, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
@@ -432,6 +533,7 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
       return true;
 
     case "G":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       // G without count → last line, G with count → line N
       if (countExplicit) {
         executeMotion(goToLastLine, ctx, count);
@@ -444,34 +546,43 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     // === Paragraph motions ===
     case "{":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(paragraphBackward, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     case "}":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(paragraphForward, ctx, count);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     // === Matching bracket ===
     case "%":
+      if (state.pendingOperator && isCurrentlyRecording()) recordKey(data);
       executeMotion(matchingBracket, ctx, 1);
       if (!state.pendingOperator) resetOperatorState(state);
       return true;
 
     // === Insert mode entry ===
     case "i":
+      beginChangeRecording(state, "i", count);
+      markInsertEntry();
       state.mode = "insert";
       resetOperatorState(state);
       return true;
 
     case "a":
+      beginChangeRecording(state, "a", count);
+      markInsertEntry();
       state.mode = "insert";
       ctx.superHandleInput(ESCAPE_SEQS.right);
       resetOperatorState(state);
       return true;
 
     case "I": {
+      beginChangeRecording(state, "I", count);
+      markInsertEntry();
       // Insert at first non-whitespace
       const lines = ctx.getText().split("\n");
       const cursor = ctx.getCursor();
@@ -485,12 +596,16 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
     }
 
     case "A":
+      beginChangeRecording(state, "A", count);
+      markInsertEntry();
       ctx.superHandleInput(ESCAPE_SEQS.end);
       state.mode = "insert";
       resetOperatorState(state);
       return true;
 
     case "o": {
+      beginChangeRecording(state, "o", count);
+      markInsertEntry();
       // Open line below
       const lines = ctx.getText().split("\n");
       const cursor = ctx.getCursor();
@@ -503,6 +618,8 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
     }
 
     case "O": {
+      beginChangeRecording(state, "O", count);
+      markInsertEntry();
       // Open line above
       const lines = ctx.getText().split("\n");
       const cursor = ctx.getCursor();
@@ -533,18 +650,22 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     // === Basic editing ===
     case "x": {
+      beginChangeRecording(state, "x", count);
       // x = dl (delete char under cursor)
       for (let i = 0; i < count; i++) {
         ctx.superHandleInput(ESCAPE_SEQS.delete);
       }
+      finalizeChangeRecording(state);
       resetOperatorState(state);
       return true;
     }
 
     case "X": {
+      beginChangeRecording(state, "X", count);
       for (let i = 0; i < count; i++) {
         ctx.superHandleInput(ESCAPE_SEQS.backspace);
       }
+      finalizeChangeRecording(state);
       resetOperatorState(state);
       return true;
     }
@@ -556,6 +677,7 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
 
     // === Join lines ===
     case "J": {
+      beginChangeRecording(state, "J", count);
       const lines = ctx.getText().split("\n");
       const cursor = ctx.getCursor();
       const joinCount = Math.min(count, lines.length - cursor.line - 1);
@@ -577,12 +699,14 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
         const finalLine = lines[cursor.line] || "";
         ctx.moveCursorTo(cursor.line, Math.min(joinCol, Math.max(0, finalLine.length - 1)));
       }
+      finalizeChangeRecording(state);
       resetOperatorState(state);
       return true;
     }
 
     // === Toggle case ===
     case "~": {
+      beginChangeRecording(state, "~", count);
       const lines = ctx.getText().split("\n");
       const cursor = ctx.getCursor();
       const line = lines[cursor.line] || "";
@@ -598,6 +722,7 @@ export function handleNormalMode(data: string, ctx: NormalModeContext): boolean 
         ctx.setText(lines.join("\n"));
         ctx.moveCursorTo(cursor.line, Math.min(end, Math.max(0, (lines[cursor.line] || "").length - 1)));
       }
+      finalizeChangeRecording(state);
       resetOperatorState(state);
       return true;
     }
@@ -658,6 +783,71 @@ function executeMotionForOperator(
   };
 
   applyOperatorWithMotion(ctx, lines, cursor, motionResult);
+}
+
+/**
+ * Begin recording a change for dot-repeat, unless already recording or replaying.
+ */
+function beginChangeRecording(state: VimState, key: string, count: number): void {
+  if (state.isReplaying) return;
+  if (isCurrentlyRecording()) return;
+  startRecording();
+  if (count > 1) {
+    recordKey(String(count));
+  }
+  // For compound keys like "r{char}", record all chars
+  for (const ch of key) {
+    recordKey(ch);
+  }
+}
+
+/**
+ * Finalize recording if we're recording and not replaying.
+ */
+function finalizeChangeRecording(state: VimState): void {
+  if (state.isReplaying) return;
+  if (isCurrentlyRecording()) {
+    finalizeRecording();
+  }
+}
+
+/**
+ * Replay the last recorded change (dot-repeat).
+ * If countOverride > 0, use it instead of the recorded count.
+ */
+function replayLastChange(ctx: NormalModeContext, countOverride: number): void {
+  const change = getLastChange();
+  if (!change) return;
+
+  const { state } = ctx;
+  state.isReplaying = true;
+
+  try {
+    // Replay the normal-mode keys
+    for (const key of change.keys) {
+      // If this is a count and we have an override, skip the recorded count
+      // (The count is embedded in the keys as a string number)
+      handleNormalMode(key, ctx);
+    }
+
+    // If the change entered insert mode, type the recorded insert text then escape
+    if (change.enteredInsert && state.mode === "insert") {
+      for (const ch of change.insertedText) {
+        if (ch === "\n") {
+          ctx.superHandleInput("\n");
+        } else {
+          ctx.superHandleInput(ch);
+        }
+      }
+      // Exit insert mode
+      state.mode = "normal";
+      if (ctx.getCursor().col > 0) {
+        ctx.superHandleInput("\x1b[D"); // left
+      }
+    }
+  } finally {
+    state.isReplaying = false;
+  }
 }
 
 /**
