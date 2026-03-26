@@ -2,28 +2,25 @@
 
 Vim motions extension for [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent). Replaces the default input editor with a vim-modal editor supporting normal, insert, visual, and replace modes.
 
-## Branches
-
-- **`main`** — Vim motions only
-- **`fzfp`** — Vim motions + integrated [pi-fzfp](https://github.com/burneikis/pi-fzfp) fuzzy file picker
-
 ## Install
 
-### Vim only (main branch)
+### Vim only
 
 ```bash
 pi install git:github.com/burneikis/pi-vim
 ```
 
-### Vim + Fuzzy File Picker (fzfp branch)
+### Vim + Fuzzy File Picker
+
+To also enable the [pi-fzfp](https://github.com/burneikis/pi-fzfp) fuzzy file picker:
 
 ```bash
-pi install git:github.com/burneikis/pi-vim#fzfp
+pi install git:github.com/burneikis/pi-vim
 cd ~/.pi/agent/extensions/pi-vim
-npm install
+npm install @burneikis/pi-fzfp
 ```
 
-**Do not install pi-fzfp separately when using this branch** — the fuzzy matching is built in.
+> **Note:** The fuzzy file picker requires [`fd`](https://github.com/sharkdp/fd) on your `PATH`.
 
 ## Features
 
@@ -36,10 +33,9 @@ npm install
 - Registers and yank/paste
 - Dot repeat
 
-### Fuzzy File Picker (fzfp branch)
+### Fuzzy File Picker (optional)
 - Replaces `@file` autocomplete with weighted dual-key fuzzy matching
 - Basename matches scored 2× higher than path matches
 - Suffix alignment bonus for extension-aware matching (`@acts` → `abct.ts` over `abct.scss`)
 - Path prefix pre-filtering when query contains `/`
 - Test file penalty as a tiebreaker
-- Requires [`fd`](https://github.com/sharkdp/fd) on `PATH`
