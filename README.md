@@ -4,12 +4,27 @@ Vim motions extension for [pi-coding-agent](https://github.com/badlogic/pi-mono/
 
 ## Install
 
+### Vim only
+
 ```bash
-git clone https://github.com/burneikis/pi-vim ~/.pi/agent/extensions/pi-vim
+pi install git:github.com/burneikis/pi-vim
 ```
+
+### Vim + Fuzzy File Picker
+
+To also enable the [pi-fzfp](https://github.com/burneikis/pi-fzfp) fuzzy file picker:
+
+```bash
+pi install git:github.com/burneikis/pi-vim
+cd ~/.pi/agent/extensions/pi-vim
+npm install @burneikis/pi-fzfp
+```
+
+> **Note:** The fuzzy file picker requires [`fd`](https://github.com/sharkdp/fd) on your `PATH`.
 
 ## Features
 
+### Vim Motions
 - Normal, Insert, Visual, and Replace modes
 - Motions (`h`, `j`, `k`, `l`, `w`, `b`, `e`, `0`, `$`, `gg`, `G`, etc.)
 - Operators (`d`, `c`, `y`, `p`, etc.)
@@ -17,3 +32,10 @@ git clone https://github.com/burneikis/pi-vim ~/.pi/agent/extensions/pi-vim
 - Search (`/`, `?`, `n`, `N`)
 - Registers and yank/paste
 - Dot repeat
+
+### Fuzzy File Picker (optional)
+- Replaces `@file` autocomplete with weighted dual-key fuzzy matching
+- Basename matches scored 2× higher than path matches
+- Suffix alignment bonus for extension-aware matching (`@acts` → `abct.ts` over `abct.scss`)
+- Path prefix pre-filtering when query contains `/`
+- Test file penalty as a tiebreaker

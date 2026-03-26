@@ -9,7 +9,13 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@mariozechner/pi-tui";
-import type { TUI, EditorOptions, EditorTheme } from "@mariozechner/pi-tui";
+import type { TUI, EditorOptions, EditorTheme, AutocompleteProvider } from "@mariozechner/pi-tui";
+let wrapWithFuzzyFiles: ((provider: AutocompleteProvider) => AutocompleteProvider) | undefined;
+try {
+  ({ wrapWithFuzzyFiles } = await import("@burneikis/pi-fzfp/provider"));
+} catch {
+  // @burneikis/pi-fzfp not installed — fuzzy file picking disabled
+}
 import { createInitialState, modeDisplayName, type VimState } from "./state.js";
 import { handleNormalMode, type NormalModeContext } from "./modes/normal.js";
 import { handleInsertMode, type InsertModeContext } from "./modes/insert.js";
@@ -36,6 +42,14 @@ export class VimEditor extends CustomEditor {
   ) {
     super(tui, theme, keybindings, options);
     this.vimState = createInitialState();
+  }
+
+  /**
+   * Wrap the autocomplete provider with fuzzy file matching for @ queries.
+   * This integrates pi-fzfp's weighted dual-key scoring into the vim editor.
+   */
+  override setAutocompleteProvider(provider: AutocompleteProvider): void {
+    super.setAutocompleteProvider(wrapWithFuzzyFiles ? wrapWithFuzzyFiles(provider) : provider);
   }
 
   /**
