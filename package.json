@@ -6,11 +6,14 @@
   "pi": {
     "extensions": ["./index.ts"]
   },
-  "dependencies": {
-    "pi-fzfp": "file:../pi-fzfp"
-  },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-tui": "*"
+    "@mariozechner/pi-tui": "*",
+    "@burneikis/pi-fzfp": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@burneikis/pi-fzfp": {
+      "optional": true
+    }
   }
 }
