@@ -1,0 +1,16 @@
+{
+  "name": "pi-vim",
+  "version": "1.0.0",
+  "description": "Vim motions extension for pi with integrated fuzzy file picker",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "pi-fzfp": "file:../pi-fzfp"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*"
+  }
+}
