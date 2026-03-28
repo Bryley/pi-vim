@@ -10,6 +10,7 @@
  * Search can also be used as a motion with operators (e.g., d/pattern).
  */
 
+import { matchesKey } from "@mariozechner/pi-tui";
 import type { MotionFn, MotionResult, Position } from "./motions.js";
 
 export interface SearchState {
@@ -64,7 +65,7 @@ export function beginSearch(
  */
 export function handleSearchInput(data: string): "continue" | "confirm" | "cancel" {
   // Escape or Ctrl+[ → cancel search
-  if (data === "\x1b" || data === "\x1b[") {
+  if (matchesKey(data, "escape") || data === "\x1b" || data === "\x1b[") {
     searchState.active = false;
     searchState.inputBuffer = "";
     return "cancel";

@@ -183,7 +183,8 @@ export class VimEditor extends CustomEditor {
       this.moveCursorTo(motionResult.position.line, motionResult.position.col);
       this.vimState.mode = returnMode;
     } else if (result === "cancel") {
-      this.vimState.mode = returnMode;
+      this.vimState.mode = "normal";
+      this.vimState.visualAnchor = null;
     }
     // "continue" → stay in command-line mode, render will show the prompt
   }
